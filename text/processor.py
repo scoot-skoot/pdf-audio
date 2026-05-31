@@ -1,3 +1,5 @@
+import re
+
 def chunk_text(text, max_len = 2000):
     sentences = re.split(r'(?<=[.!?]) +', text)
 
@@ -12,7 +14,7 @@ def chunk_text(text, max_len = 2000):
             current = s + " "
 
     if current:
-        chunks.appent(current.strip())
+        chunks.append(current.strip())
 
 
     return chunks
