@@ -1,0 +1,6 @@
+.venv/
+scratch/
+__pycache__/
+*.pyc
+output/
+git s
