@@ -3,6 +3,7 @@ import sys
 import asyncio
 import os
 import time
+import json
 
 # Personal Libraries
 from pdf.extractor import extract_text
@@ -21,8 +22,9 @@ def main(pdf_path: str):
     pdf_path = sys.argv[1]
 
     book_name = os.path.splitext(os.path.basename(pdf_path))[0]
+    book_dir = os.path.join("output", book_name)
 
-    
+
     run_meta = {
         "book": book_name,
         "timings": {},
@@ -33,7 +35,7 @@ def main(pdf_path: str):
     # Text Extraction
     start = time.perf_counter()
     text = extract_text(pdf_path)
-    raw_path = f"output/text/{book_name}/raw.txt"
+    raw_path = os.path.join(book_dir, "text", "raw.txt")
     save_text(raw_path, text)
     run_meta["timings"]["extract"] = time.perf_counter() - start
     run_meta["sizes"]["raw_chars"] = len(text)
@@ -47,7 +49,7 @@ def main(pdf_path: str):
     cleaned = clean_text(text)
     run_meta["timings"]["clean"] = time.perf_counter() - start
     run_meta["sizes"]["clean_chars"] = len(cleaned)
-    clean_path = f"output/text/{book_name}/cleaned.text"
+    clean_path = os.path.join(book_dir, "text", "cleaned.txt")
     save_text(clean_path, cleaned)
     run_meta["sizes"]["clean_chars"] = len(cleaned)
 
@@ -63,31 +65,29 @@ def main(pdf_path: str):
     
     # TTS (Edge_TTS Call /w Concurrency (asycio))
     start = time.perf_counter()
-    chunk_paths = asyncio.run(generate_audio(chunks))
+    chunk_paths = asyncio.run(generate_audio(chunks, os.path.join(book_dir, "chunks")))
     run_meta["timings"]["tts"] = time.perf_counter() - start
 
     print(f"[4] Audio chunks generated: {len(chunk_paths)}")
 
     # Merging
-    final_path = f"output/chunks/{book_name}"
     start = time.perf_counter()
-    output_path = get_output_path(pdf_path)
+    output_path = get_output_path(book_dir)
     print(f"[5.1] Merging into {output_path}...")
 
-    merge_audio(chunk_paths, final_path)
+    merge_audio(chunk_paths, output_path)
     run_meta["timings"]["merge"] = time.perf_counter() - start
-    run_meta["paths"]["final"] = final_path
-        
+    run_meta["paths"]["final"] = output_path
+
     print(f"[5.2] Final audio: {output_path}")
-    
-    
+
+
     # Saving Metadata
-    meta_path = f"output/runs/{book_name}/meta.json"
+    meta_path = os.path.join(book_dir, "meta.json")
     os.makedirs(os.path.dirname(meta_path), exist_ok=True)
 
-    import json
     with open(meta_path, "w") as f:
-        json.jump(run_meta, f, indent=2)
+        json.dump(run_meta, f, indent=2)
 
     print("[6] Run metadata saved.")
 

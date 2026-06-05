@@ -1,12 +1,12 @@
 from pydub import AudioSegment
 import os
 
-def get_output_path(pdf_path: str) -> str:
-    
-    book_name, _ = os.path.splitext(os.path.basename(pdf_path)) # Tuple unpacking
-    return f"output/final/{book_name}.mp3"
+def get_output_path(book_dir: str) -> str:
+    return os.path.join(book_dir, "final.mp3")
 
 def merge_audio(chunk_paths: list[str], output_path: str):
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
     combined = AudioSegment.empty()
     chunk_paths = sorted(chunk_paths)
 
