@@ -8,7 +8,8 @@ import json
 
 # Personal Libraries
 from pdf.extractor import extract_text
-from text.processor import clean_text, chunk_scenes, chunk_structured
+from text.processor import clean_text, chunk_scenes, chunk_structured, FRONT_ID, BACK_ID
+from text.document import split_document
 from text.scene_splitter import split_into_scenes
 from text.character_extractor import extract_segments
 from text.mode_detector import detect_mode
@@ -16,6 +17,7 @@ from voice.registry import NARRATOR_NAME, NARRATOR_VOICE, build_voice_map, build
 from tts.tts import generate_audio
 from text.save import save_text
 from obs.trace import Trace
+from audio.conditioning import apply_audio_conditioning, pacing_to_rate, PAUSE_MS
 from audio.merge import get_output_path
 from audio.merge import merge_audio
 
@@ -73,16 +75,23 @@ def main(argv):
     print(f"[1] Extracted text length: {len(text)} chars")
 
 
-    # Text Cleaning
-    start = time.perf_counter()
-    cleaned = clean_text(text)
-    run_meta["timings"]["clean"] = time.perf_counter() - start
-    run_meta["sizes"]["clean_chars"] = len(cleaned)
+    # Stage 0 — Document boundary split (deterministic). Front/back matter are
+    # narrated; only main_content runs scene/speaker analysis.
+    segs = split_document(text)
+    front = clean_text(segs["front_matter"])
+    main = clean_text(segs["main_content"])
+    back = clean_text(segs["back_matter"])
+    run_meta["document"] = {
+        "front_chars": len(front), "main_chars": len(main), "back_chars": len(back)
+    }
+    trace.event("document_split", front=len(front), main=len(main), back=len(back))
+    print(f"[2] Document split — front:{len(front)} main:{len(main)} back:{len(back)} chars")
+
+    # Cleaned main content is the canonical text for the pipeline + artifacts.
+    cleaned = main
     clean_path = os.path.join(book_dir, "text", "cleaned.txt")
     save_text(clean_path, cleaned)
     run_meta["sizes"]["clean_chars"] = len(cleaned)
-
-    print(f"[2] Cleaned text length: {len(cleaned)}")
 
     # Mode selection: valid CLI override wins; otherwise structured (auto-detection
     # only recommends — it never triggers the LLM path on its own).
@@ -119,9 +128,9 @@ def main(argv):
         trace.event("segment_extract", status="fallback" if seg_result.fallback_used else "success",
                     segments=run_meta["segment_count"], repairs=seg_result.repairs)
 
-        # Deterministic voice assignment + character registry (no LLM).
-        voice_map = build_voice_map(scenes)
-        characters = build_characters(scenes, voice_map)
+        # Deterministic gender-aware voice assignment + character registry (no LLM).
+        voice_map = build_voice_map(scenes, seg_result.characters)
+        characters = build_characters(scenes, voice_map, seg_result.characters)
         run_meta["voice_map"] = voice_map
         run_meta["character_count"] = len(characters)
         trace.event("voice_assign", characters=len(characters))
@@ -146,15 +155,38 @@ def main(argv):
         chunks = chunk_structured(cleaned)
         run_meta["timings"]["chunk"] = time.perf_counter() - start
 
+    # Bracket the main content with narrated front/back matter (Narrator voice),
+    # then reindex chunk_id sequentially across the whole book.
+    front_chunks = chunk_structured(front, scene_id=FRONT_ID) if front else []
+    back_chunks = chunk_structured(back, scene_id=BACK_ID) if back else []
+    chunks = front_chunks + chunks + back_chunks
+    for i, c in enumerate(chunks):
+        c["chunk_id"] = i
+
     run_meta["sizes"]["chunks"] = len(chunks)
     run_meta["chunk_count"] = len(chunks)
-    trace.event("chunk", chunks=len(chunks))
+    trace.event("chunk", chunks=len(chunks), front=len(front_chunks), back=len(back_chunks))
 
-    print(f"[3.3] Chunk count: {len(chunks)}")
+    print(f"[3.3] Chunk count: {len(chunks)} (front {len(front_chunks)}, back {len(back_chunks)})")
 
-    # TTS (Edge_TTS Call /w Concurrency (asycio)) — per-chunk voice.
+    # Stage 5 — Audio conditioning (deterministic): pause/pacing annotations + text normalization.
     start = time.perf_counter()
-    tts_items = [{"text": c["text"], "voice": c["voice"]} for c in chunks]
+    audio_chunks = apply_audio_conditioning(chunks)
+    run_meta["timings"]["audio_condition"] = time.perf_counter() - start
+    save_text(os.path.join(book_dir, "chunks.json"), json.dumps(audio_chunks, indent=2))
+    profiles = {}
+    for c in audio_chunks:
+        profiles[c["pause_profile"]] = profiles.get(c["pause_profile"], 0) + 1
+    run_meta["pause_profiles"] = profiles
+    trace.event("audio_condition", profiles=profiles)
+    print(f"[3.4] Audio-conditioned chunks: {profiles}")
+
+    # TTS (Edge_TTS Call /w Concurrency) — per-chunk voice + pacing rate.
+    start = time.perf_counter()
+    tts_items = [
+        {"text": c["text"], "voice": c["voice"], "rate": pacing_to_rate(c["pacing_hint"])}
+        for c in audio_chunks
+    ]
     chunk_paths = asyncio.run(generate_audio(tts_items, os.path.join(book_dir, "chunks")))
     run_meta["timings"]["tts"] = time.perf_counter() - start
     trace.event("tts", chunks=len(chunk_paths))
@@ -166,7 +198,8 @@ def main(argv):
     output_path = get_output_path(book_dir)
     print(f"[5.1] Merging into {output_path}...")
 
-    merge_audio(chunk_paths, output_path)
+    lead_silences_ms = [PAUSE_MS[c["pause_profile"]] for c in audio_chunks]
+    merge_audio(chunk_paths, output_path, lead_silences_ms)
     run_meta["timings"]["merge"] = time.perf_counter() - start
     run_meta["paths"]["final"] = output_path
     trace.event("merge", path=output_path)

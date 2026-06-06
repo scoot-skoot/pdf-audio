@@ -19,7 +19,7 @@ SYSTEM_PROMPT = (
     "STRICT JSON ONLY — no prose, no markdown, no code fences."
 )
 
-USER_PROMPT_TEMPLATE = """Attribute speakers for each scene below.
+USER_PROMPT_TEMPLATE = """Attribute speakers for each scene below, and classify each character.
 
 For every scene, return a list of `segments` that tile the WHOLE scene with no gaps
 and no overlaps. Each segment has:
@@ -27,13 +27,22 @@ and no overlaps. Each segment has:
 - "start_char" and "end_char": offsets RELATIVE TO THAT SCENE'S TEXT (0-indexed),
   where 0 <= start_char < end_char <= the scene length shown below.
 
+Also return a `characters` list: one entry per distinct non-Narrator speaker, with:
+- "character": the exact name used as a speaker above
+- "gender": "male", "female", or "unknown"
+- "confidence": a number from 0 to 1 for how sure you are of the gender
+
 Rules:
 - Use "Narrator" for everything that is not a character's spoken dialogue.
 - Keep speaker names consistent across scenes (same character → same exact name).
 - Segments within a scene must be ordered and cover it from 0 to its full length.
+- Do NOT choose voices — only classify. Use "unknown" when unsure.
 
 Return STRICT JSON ONLY in exactly this shape:
 {{
+  "characters": [
+    {{ "character": "Alice", "gender": "female", "confidence": 0.92 }}
+  ],
   "scenes": [
     {{ "scene_id": 1, "segments": [
         {{ "speaker": "Narrator", "start_char": 0, "end_char": 120 }},
@@ -58,6 +67,31 @@ class SegmentResult:
     fallback_used: bool
     retry_count: int
     repairs: int
+    characters: dict  # name -> {"gender", "confidence"}; {} when none/fallback
+
+
+_VALID_GENDERS = {"male", "female", "unknown"}
+
+
+def _parse_characters(output: dict) -> dict:
+    """Extract {name: {gender, confidence}} from the LLM output, defensively."""
+    meta: dict = {}
+    for entry in output.get("characters") or []:
+        if not isinstance(entry, dict):
+            continue
+        name = entry.get("character")
+        if not isinstance(name, str) or not name.strip():
+            continue
+        gender = entry.get("gender")
+        if gender not in _VALID_GENDERS:
+            gender = "unknown"
+        try:
+            confidence = float(entry.get("confidence", 0.0))
+        except (TypeError, ValueError):
+            confidence = 0.0
+        confidence = max(0.0, min(1.0, confidence))
+        meta[name.strip()] = {"gender": gender, "confidence": confidence}
+    return meta
 
 
 def _normalize_speaker(speaker) -> str:
@@ -177,11 +211,11 @@ def extract_segments(scenes: list[Scene], clean_text: str) -> SegmentResult:
     """
     client = LLMClient()
     if not scenes:
-        return SegmentResult(scenes=scenes, fallback_used=True, retry_count=0, repairs=0)
+        return SegmentResult(scenes=scenes, fallback_used=True, retry_count=0, repairs=0, characters={})
     if not client.api_key:
         print("[chars] DEEPSEEK_API_KEY not set — Narrator-only attribution.")
         _apply_narrator_fallback(scenes)
-        return SegmentResult(scenes=scenes, fallback_used=True, retry_count=0, repairs=0)
+        return SegmentResult(scenes=scenes, fallback_used=True, retry_count=0, repairs=0, characters={})
 
     correction = ""
     for attempt in range(1, MAX_RETRIES + 2):
@@ -192,12 +226,15 @@ def extract_segments(scenes: list[Scene], clean_text: str) -> SegmentResult:
             total_repairs = 0
             for scene in scenes:
                 total_repairs += reconstruct_segments(scene, by_id.get(scene["scene_id"]))
-            print(f"[chars] Attributed segments on attempt {attempt} ({total_repairs} repairs).")
+            characters = _parse_characters(output)
+            print(f"[chars] Attributed segments on attempt {attempt} "
+                  f"({total_repairs} repairs, {len(characters)} classified).")
             return SegmentResult(
                 scenes=scenes,
                 fallback_used=False,
                 retry_count=attempt - 1,
                 repairs=total_repairs,
+                characters=characters,
             )
         except json.JSONDecodeError:
             reason = "the response was not valid JSON"
@@ -209,4 +246,4 @@ def extract_segments(scenes: list[Scene], clean_text: str) -> SegmentResult:
 
     print("[chars] All attempts failed — Narrator-only attribution.")
     _apply_narrator_fallback(scenes)
-    return SegmentResult(scenes=scenes, fallback_used=True, retry_count=MAX_RETRIES + 1, repairs=0)
+    return SegmentResult(scenes=scenes, fallback_used=True, retry_count=MAX_RETRIES + 1, repairs=0, characters={})

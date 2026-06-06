@@ -5,13 +5,15 @@ import os
 DEFAULT_VOICE = "en-GB-RyanNeural"
 
 
-async def generate_chunk(text: str, voice: str, filename: str, semaphore: asyncio.Semaphore):
+async def generate_chunk(
+    text: str, voice: str, filename: str, semaphore: asyncio.Semaphore, rate: str = "+0%"
+):
     async with semaphore:
-        communicate = edge_tts.Communicate(text=text, voice=voice or DEFAULT_VOICE)
+        communicate = edge_tts.Communicate(text=text, voice=voice or DEFAULT_VOICE, rate=rate)
 
         await communicate.save(filename)
 
-        print(f"Saved {filename} ({voice or DEFAULT_VOICE})")
+        print(f"Saved {filename} ({voice or DEFAULT_VOICE} @ {rate})")
 
 
 async def generate_audio(items: list[dict], output_dir: str = "output/chunks"):
@@ -29,7 +31,15 @@ async def generate_audio(items: list[dict], output_dir: str = "output/chunks"):
     for i, item in enumerate(items):
         filename = os.path.join(output_dir, f"chunk_{i:04d}.mp3")
         chunk_paths.append(filename)
-        tasks.append(generate_chunk(item["text"], item.get("voice", DEFAULT_VOICE), filename, semaphore))
+        tasks.append(
+            generate_chunk(
+                item["text"],
+                item.get("voice", DEFAULT_VOICE),
+                filename,
+                semaphore,
+                item.get("rate", "+0%"),
+            )
+        )
 
     results = await asyncio.gather(*tasks, return_exceptions=True)
 

@@ -4,6 +4,12 @@ from typing import TypedDict
 from text.scene_splitter import Scene
 from voice.registry import NARRATOR_NAME, NARRATOR_VOICE
 
+# Sentinel scene_ids for non-scene narration (structured main = 0; document
+# front/back matter narrated around the main content).
+STRUCTURED_ID = 0
+FRONT_ID = -1
+BACK_ID = -2
+
 
 class Chunk(TypedDict):
     chunk_id: int
@@ -65,16 +71,17 @@ def chunk_scenes(
     return chunks
 
 
-def chunk_structured(text: str, max_len: int = 2000) -> list[Chunk]:
-    """Structured-mode chunking: chunk_text output wrapped as Narrator Chunks.
+def chunk_structured(text: str, scene_id: int = STRUCTURED_ID, max_len: int = 2000) -> list[Chunk]:
+    """Narrator-only chunking: chunk_text output wrapped as Narrator Chunks.
 
-    scene_id is 0 (sentinel for "no scene"); speaker/voice are the narrator so the
+    Used for structured mode (scene_id=STRUCTURED_ID) and for narrated front/back
+    matter (scene_id=FRONT_ID / BACK_ID). speaker/voice are the narrator so the
     Chunk shape is uniform with the narrative branch. No LLM.
     """
     return [
         {
             "chunk_id": i,
-            "scene_id": 0,
+            "scene_id": scene_id,
             "text": piece,
             "speaker": NARRATOR_NAME,
             "voice": NARRATOR_VOICE,
