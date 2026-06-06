@@ -7,7 +7,8 @@ import json
 
 # Personal Libraries
 from pdf.extractor import extract_text
-from text.processor import clean_text, chunk_text
+from text.processor import clean_text, chunk_scenes
+from text.scene_splitter import split_into_scenes
 from tts.tts import generate_audio
 from text.save import save_text
 from audio.merge import get_output_path
@@ -55,17 +56,30 @@ def main(pdf_path: str):
 
     print(f"[2] Cleaned text length: {len(cleaned)}")
 
-    # Text chunking
+    # Scene segmentation (single LLM call, with deterministic fallback)
     start = time.perf_counter()
-    chunks = chunk_text(cleaned)
+    scenes = split_into_scenes(cleaned)
+    run_meta["timings"]["scene_split"] = time.perf_counter() - start
+    run_meta["scenes"] = len(scenes)
+    run_meta["scene_sizes"] = [len(s["text"]) for s in scenes]
+    scenes_path = os.path.join(book_dir, "text", "scenes.json")
+    save_text(scenes_path, json.dumps(scenes, indent=2))
+    run_meta["paths"]["scenes"] = scenes_path
+
+    print(f"[3.1] Scene count: {len(scenes)}")
+
+    # Deterministic chunking (per scene)
+    start = time.perf_counter()
+    chunks = chunk_scenes(scenes)
     run_meta["timings"]["chunk"] = time.perf_counter() - start
     run_meta["sizes"]["chunks"] = len(chunks)
 
-    print(f"[3] Chunk count: {len(chunks)}")
-    
+    print(f"[3.2] Chunk count: {len(chunks)}")
+
     # TTS (Edge_TTS Call /w Concurrency (asycio))
     start = time.perf_counter()
-    chunk_paths = asyncio.run(generate_audio(chunks, os.path.join(book_dir, "chunks")))
+    chunk_texts = [c["text"] for c in chunks]
+    chunk_paths = asyncio.run(generate_audio(chunk_texts, os.path.join(book_dir, "chunks")))
     run_meta["timings"]["tts"] = time.perf_counter() - start
 
     print(f"[4] Audio chunks generated: {len(chunk_paths)}")
