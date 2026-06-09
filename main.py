@@ -10,6 +10,7 @@ import json
 from pdf.extractor import extract_text
 from text.processor import clean_text, chunk_scenes, chunk_structured, FRONT_ID, BACK_ID
 from text.document import split_document
+from text.matter_detector import detect_matter
 from text.scene_splitter import split_into_scenes
 from text.character_extractor import extract_segments
 from text.mode_detector import detect_mode
@@ -46,10 +47,16 @@ def main(argv):
     parser.add_argument("pdf_path", help="Path to the input PDF")
     # No choices=: an invalid value falls back to automatic detection per design.
     parser.add_argument("--mode", default=None, help="Pipeline mode: structured | narrative")
+    parser.add_argument(
+        "--trim-matter",
+        action="store_true",
+        help="Remove detected front/back matter (LLM); narrate main content only.",
+    )
     args = parser.parse_args(argv)
 
     pdf_path = args.pdf_path
     cli_mode = args.mode
+    trim_matter = args.trim_matter
 
     book_name = os.path.splitext(os.path.basename(pdf_path))[0]
     book_dir = os.path.join("output", book_name)
@@ -86,6 +93,54 @@ def main(argv):
     }
     trace.event("document_split", front=len(front), main=len(main), back=len(back))
     print(f"[2] Document split — front:{len(front)} main:{len(main)} back:{len(back)} chars")
+
+    # Stage 0.5 — optional LLM matter trim (--trim-matter). Refines the deterministic
+    # main_content and drops front/back from narration. Default: narrate all three.
+    run_meta["trim_matter_enabled"] = trim_matter
+    narrate_front, narrate_back = front, back
+    if trim_matter:
+        trace.event("matter_detection_start", chars=len(main))
+        start = time.perf_counter()
+        matter = detect_matter(main)
+        run_meta["timings"]["matter_detection"] = time.perf_counter() - start
+
+        # Refined body becomes the only narrated content; deterministic front/back and
+        # LLM-detected extra matter are dropped from audio (saved as artifacts below).
+        main = matter.main_content
+        narrate_front, narrate_back = "", ""
+
+        run_meta["matter"] = {
+            "front_chars_removed": len(matter.front_matter),
+            "back_chars_removed": len(matter.back_matter),
+            "front_confidence": matter.front_confidence,
+            "back_confidence": matter.back_confidence,
+        }
+        run_meta["matter_detection_fallback"] = matter.fallback_used
+        run_meta["matter_detection_retries"] = matter.retry_count
+        trace.event(
+            "matter_detection_fallback" if matter.fallback_used else "matter_detection_success",
+            front=len(matter.front_matter), back=len(matter.back_matter),
+            front_conf=matter.front_confidence, back_conf=matter.back_confidence,
+        )
+        print(
+            f"[2.5] Matter trim — front:{len(matter.front_matter)} back:{len(matter.back_matter)} "
+            f"chars removed (fallback={matter.fallback_used})"
+        )
+
+        # Save what was trimmed for transparency (deterministic + LLM matter combined).
+        front_path = os.path.join(book_dir, "text", "front_matter.txt")
+        back_path = os.path.join(book_dir, "text", "back_matter.txt")
+        save_text(front_path, front + matter.front_matter)
+        save_text(back_path, matter.back_matter + back)
+        save_text(os.path.join(book_dir, "matter.json"), json.dumps({
+            "front_matter": front + matter.front_matter,
+            "main_content": matter.main_content,
+            "back_matter": matter.back_matter + back,
+            "front_confidence": matter.front_confidence,
+            "back_confidence": matter.back_confidence,
+        }, indent=2))
+        run_meta["paths"]["front_matter"] = front_path
+        run_meta["paths"]["back_matter"] = back_path
 
     # Cleaned main content is the canonical text for the pipeline + artifacts.
     cleaned = main
@@ -157,8 +212,8 @@ def main(argv):
 
     # Bracket the main content with narrated front/back matter (Narrator voice),
     # then reindex chunk_id sequentially across the whole book.
-    front_chunks = chunk_structured(front, scene_id=FRONT_ID) if front else []
-    back_chunks = chunk_structured(back, scene_id=BACK_ID) if back else []
+    front_chunks = chunk_structured(narrate_front, scene_id=FRONT_ID) if narrate_front else []
+    back_chunks = chunk_structured(narrate_back, scene_id=BACK_ID) if narrate_back else []
     chunks = front_chunks + chunks + back_chunks
     for i, c in enumerate(chunks):
         c["chunk_id"] = i
