@@ -3,5 +3,8 @@ __pycache__/
 *.pyc
 output/
 sample_pdfs/
+input/*
+!input/.gitkeep
 .env
 .env.*
+CLAUDE.md

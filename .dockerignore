@@ -1,0 +1,10 @@
+.venv/
+output/
+sample_pdfs/
+.git/
+.claude/
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+chttp-server/
