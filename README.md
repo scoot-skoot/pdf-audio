@@ -6,12 +6,12 @@ Convert any PDF into a narrated MP3 audiobook. Supports a fast single-voice mode
 
 ## Table of Contents
 
-1. [How it works](#how-it-works)
-2. [Prerequisites](#prerequisites)
+1. [How it works](#how-it-works) ⚙️
+2. [Prerequisites](#prerequisites)  🛑
 3. [Setup](#setup)
 4. [Running with Docker (recommended)](#running-with-docker-recommended)
 5. [Running locally (without Docker)](#running-locally-without-docker)
-6. [Options reference](#options-reference)
+6. [Options reference](#options-reference)  🤓Textbook |🧙 Narrative
 7. [Output files](#output-files)
 8. [LLM configuration](#llm-configuration)
 9. [Troubleshooting](#troubleshooting)
