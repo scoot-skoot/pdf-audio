@@ -5,3 +5,4 @@ pypdf==6.12.2          # PDF text extraction (pdf/extractor.py)
 edge-tts==7.2.8        # Microsoft Edge online TTS (tts/tts.py)
 pydub==0.25.1          # MP3 concatenation, requires ffmpeg (audio/merge.py)
 aiohttp==3.13.5        # OpenAI-compatible LLM HTTP client (llm/client.py)
+psycopg[binary]==3.2.3 # Postgres driver (worker.py job state); unused by the CLI

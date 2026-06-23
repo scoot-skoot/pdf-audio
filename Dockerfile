@@ -6,18 +6,16 @@ RUN apt-get update \
 
 WORKDIR /app
 
+# Stream stdout/stderr (the worker is long-running; unbuffered logs surface progress live).
+ENV PYTHONUNBUFFERED=1
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY audio/ audio/
-COPY llm/ llm/
-COPY obs/ obs/
-COPY pdf/ pdf/
-COPY text/ text/
-COPY tts/ tts/
-COPY voice/ voice/
-COPY main.py .
+COPY app/ app/
+COPY cli.py worker.py schema.sql ./
 
 VOLUME ["/app/input", "/app/output"]
 
-ENTRYPOINT ["python", "main.py"]
+# Default to the CLI; the worker service overrides this with `python worker.py`.
+ENTRYPOINT ["python", "cli.py"]
