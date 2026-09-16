@@ -16,13 +16,13 @@ class App {
     this.root.innerHTML = `
       <div class="shell">
         <header class="topbar">
-          <a class="brand-mark" href="/">pdf<span>-to-audio</span></a>
+          <a class="brand-mark" href="/">Audio Book <span>Generator</span></a>
           <p class="topbar-note">PDF in · narrated MP3 out</p>
         </header>
 
         <section class="hero" id="hero">
           <div class="hero-copy">
-            <h1 class="brand-hero">pdf<em>-to-audio</em></h1>
+            <h1 class="brand-hero">Audio Book <em>Generator</em></h1>
             <p class="hero-lead">
               Drop a PDF, choose structured or narrative narration, and listen as the
               conversion finishes — then play or download the MP3.

@@ -66,7 +66,6 @@ body::before {
   justify-content: space-between;
   gap: 1rem;
   margin-bottom: 2rem;
-  animation: rise 700ms ease both;
 }
 
 .brand-mark {
@@ -105,16 +104,12 @@ body::before {
   }
 }
 
-.hero-copy {
-  animation: rise 800ms 80ms ease both;
-}
-
 .brand-hero {
   margin: 0 0 0.85rem;
   font-family: var(--font-display);
-  font-size: clamp(3rem, 8vw, 5.4rem);
-  line-height: 0.95;
-  letter-spacing: -0.04em;
+  font-size: clamp(2.4rem, 6.5vw, 4.4rem);
+  line-height: 0.98;
+  letter-spacing: -0.03em;
   color: var(--ink);
 }
 
@@ -178,7 +173,6 @@ body::before {
 }
 
 .hero-panel {
-  animation: rise 900ms 140ms ease both, drift 8s ease-in-out infinite alternate;
   background:
     linear-gradient(145deg, rgba(255, 255, 255, 0.94), rgba(232, 241, 246, 0.9)),
     var(--paper);
@@ -313,7 +307,6 @@ body::before {
 
 .workspace {
   display: none;
-  animation: rise 500ms ease both;
 }
 
 .workspace.is-visible {
@@ -421,31 +414,10 @@ body::before {
   display: none;
 }
 
-@keyframes rise {
-  from {
-    opacity: 0;
-    transform: translateY(18px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes drift {
-  from {
-    transform: translateY(0);
-  }
-  to {
-    transform: translateY(-6px);
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
   *::after {
-    animation: none !important;
     transition: none !important;
   }
 }

@@ -1,6 +1,8 @@
-# pdf-to-audio
+# Audio Book Generator
 
 Convert any PDF into a narrated MP3 audiobook. Supports a fast single-voice mode and an LLM-powered multi-voice narrative mode that detects characters and gives each a distinct voice.
+
+> Repository: `pdf-audio` (GitHub). The product name in the app and docs is **Audio Book Generator**.
 
 Use it three ways:
 
@@ -109,7 +111,7 @@ In `structured` mode steps ④a–④c are skipped entirely — there's no LLM, 
 
 ```bash
 git clone <repo-url>
-cd pdf-to-audio
+cd pdf-audio
 ```
 
 ### 2. Configure environment variables
@@ -132,7 +134,7 @@ Get a free DeepSeek API key at [platform.deepseek.com](https://platform.deepseek
 
 ## Running the full stack (Web UI)
 
-This is the newcomer path: one Compose command brings up Postgres, the Go API, the Python worker, and the web UI.
+This is the newcomer path: one Compose command brings up Postgres, the Go API, the Python worker, and the **Audio Book Generator** web UI.
 
 ```bash
 cp .env.example .env   # optional: add DEEPSEEK_API_KEY for narrative / trim-matter

@@ -55,7 +55,7 @@ services:
       postgres:
         condition: service_healthy
 
-  # Full-stack web UI — open http://localhost:5173
+  # Audio Book Generator web UI — open http://localhost:5173
   web:
     build:
       context: ./web
