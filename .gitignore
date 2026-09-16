@@ -7,4 +7,8 @@ input/*
 !input/.gitkeep
 .env
 .env.*
+!.env.example
 CLAUDE.md
+web/node_modules/
+web/dist/
+api/api

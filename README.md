@@ -2,12 +2,13 @@
 
 Convert any PDF into a narrated MP3 audiobook. Supports a fast single-voice mode and an LLM-powered multi-voice narrative mode that detects characters and gives each a distinct voice.
 
-Use it two ways:
+Use it three ways:
 
+- **Web UI** — open the app in a browser, upload a PDF, watch progress, play/download the MP3.
 - **CLI** — convert a PDF on your machine in one command.
 - **REST API + worker** — submit jobs over HTTP; a background worker runs the conversion and you poll for the result. (Designed for eventual deployment: API → AWS ECS, Postgres → RDS, audio → S3.)
 
-Both run the **same pipeline code** — the CLI and the worker just call it differently.
+All three run the **same pipeline code** — the CLI, worker, and web UI just call it differently.
 
 ---
 
@@ -17,28 +18,29 @@ Both run the **same pipeline code** — the CLI and the worker just call it diff
 2. [The pipeline, stage by stage](#the-pipeline-stage-by-stage) 🔬
 3. [Prerequisites](#prerequisites) 🛑
 4. [Setup](#setup)
-5. [Running the CLI with Docker](#running-the-cli-with-docker)
-6. [Running the CLI locally](#running-the-cli-locally)
-7. [Running the REST API](#running-the-rest-api) 🌐
-8. [Options reference](#options-reference) 🤓 Textbook | 🧙 Narrative
-9. [Output files](#output-files)
-10. [LLM configuration](#llm-configuration)
-11. [Troubleshooting](#troubleshooting)
+5. [Running the full stack (Web UI)](#running-the-full-stack-web-ui) 🌐
+6. [Running the CLI with Docker](#running-the-cli-with-docker)
+7. [Running the CLI locally](#running-the-cli-locally)
+8. [Running the REST API](#running-the-rest-api)
+9. [Options reference](#options-reference) 🤓 Textbook | 🧙 Narrative
+10. [Output files](#output-files)
+11. [LLM configuration](#llm-configuration)
+12. [Troubleshooting](#troubleshooting)
 
 ---
 
 ## How it works
 
-You pick between two modes with `--mode`:
+You pick between two modes with `--mode` (CLI) or the mode toggle (Web UI):
 
 | Mode | LLM calls | Voices | Best for |
 |---|---|---|---|
 | `structured` (default) | 0 | Single narrator | Textbooks, papers, technical docs |
 | `narrative` | 2 | One per character + narrator | Fiction, dialogue-heavy text |
 
-The optional `--trim-matter` flag adds one extra LLM call that detects and strips front matter (title page, TOC, copyright) and back matter (references, index, appendices) so the audiobook begins near Chapter 1.
+The optional `--trim-matter` / “Trim front/back matter” option adds one extra LLM call that detects and strips front matter (title page, TOC, copyright) and back matter (references, index, appendices) so the audiobook begins near Chapter 1.
 
-Audio is synthesised via **Microsoft Edge TTS** (requires internet). LLM calls go to **DeepSeek** (needed only for `narrative` mode and `--trim-matter`; both are safe to skip — the tool falls back gracefully and still produces an MP3).
+Audio is synthesised via **Microsoft Edge TTS** (requires internet). LLM calls go to **DeepSeek** (needed only for `narrative` mode and trim-matter; both are safe to skip — the tool falls back gracefully and still produces an MP3).
 
 **Guiding principle — _the LLM decides meaning; code enforces correctness._** The LLM only *proposes* scene boundaries and who's speaking. Code then validates those proposals, slices the original text at the proposed offsets (so the LLM can never paraphrase or hallucinate words into the audio), assigns voices deterministically, and does all the file/audio work. If the LLM is unavailable or returns garbage, each stage independently falls back to a simpler result — the pipeline never aborts.
 
@@ -80,7 +82,7 @@ PDF
 final.mp3  (+ meta.json, trace.json, and intermediate text for transparency)
 ```
 
-The whole thing is orchestrated in `app/pipeline.py` → `run_pipeline(...)`, which is importable: the CLI (`cli.py`) and the worker (`worker.py`) both just call it.
+The whole thing is orchestrated in `app/pipeline.py` → `run_pipeline(...)`, which is importable: the CLI (`cli.py`) and the worker (`worker.py`) both just call it. The web UI talks to the Go API, which queues jobs for that same worker.
 
 In `structured` mode steps ④a–④c are skipped entirely — there's no LLM, every chunk is the narrator, and the result is fully deterministic.
 
@@ -93,7 +95,10 @@ In `structured` mode steps ④a–④c are skipped entirely — there's no LLM, 
 
 ### Local path
 - Python 3.12+
+- Go 1.22+ (API)
+- Node.js 22+ (web UI)
 - `ffmpeg` installed on your system (`brew install ffmpeg` / `apt install ffmpeg`)
+- Postgres 16 (API/worker)
 - Internet access (Edge TTS calls Microsoft's servers)
 
 ---
@@ -109,9 +114,11 @@ cd pdf-to-audio
 
 ### 2. Configure environment variables
 
-Edit `.env` (shipped as a blank template) and add your DeepSeek API key — only needed for `--mode narrative` or `--trim-matter`:
+Copy the template and add your DeepSeek API key — only needed for `--mode narrative` or trim-matter:
 
 ```bash
+cp .env.example .env
+# edit .env
 DEEPSEEK_API_KEY=sk-your-key-here
 ```
 
@@ -120,6 +127,38 @@ Leave `DEEPSEEK_BASE_URL` and `DEEPSEEK_MODEL` blank to use the defaults (`https
 > **Note:** `.env` is gitignored — your key will never be committed.
 
 Get a free DeepSeek API key at [platform.deepseek.com](https://platform.deepseek.com).
+
+---
+
+## Running the full stack (Web UI)
+
+This is the newcomer path: one Compose command brings up Postgres, the Go API, the Python worker, and the web UI.
+
+```bash
+cp .env.example .env   # optional: add DEEPSEEK_API_KEY for narrative / trim-matter
+docker compose up --build
+```
+
+Then open **http://localhost:5173**
+
+1. Drop a PDF (or click to browse).
+2. Pick **Structured** or **Narrative**, optionally enable **Trim front/back matter**.
+3. Click **Convert to audiobook** and watch job progress.
+4. When status is **Ready to listen**, play in the browser or **Download MP3**.
+
+The UI is served by nginx on port `5173` and proxies `/jobs` + `/healthz` to the API (`localhost:8080`). The API also allows CORS from local Vite (`5173`) if you run the frontend in dev mode.
+
+### Frontend local development (optional)
+
+With the API already running (`docker compose up postgres api worker`):
+
+```bash
+cd web
+npm install
+npm run dev
+```
+
+Vite proxies `/jobs` to `http://localhost:8080`. Open the printed URL (usually http://localhost:5173).
 
 ---
 
@@ -193,13 +232,15 @@ python cli.py "path/to/your-book.pdf" --mode narrative --trim-matter
 
 The API is the public interface: you `POST` a PDF, get a job ID back **immediately**, and a background worker does the (slow) conversion. You poll for status and download the result when it's ready. Job state lives in Postgres; the API itself never blocks on a conversion.
 
-### Start the stack
+### Start the API stack (without the web UI)
 
 ```bash
 docker compose up --build postgres api worker
 ```
 
-This starts three services: **postgres** (job state), **api** (Go, on `localhost:8080`), and **worker** (Python, runs the pipeline). Scale workers with `--scale worker=2` — jobs are claimed with `FOR UPDATE SKIP LOCKED`, so no job is ever processed twice.
+Or start everything including the UI with `docker compose up --build`.
+
+This starts **postgres** (job state), **api** (Go, on `localhost:8080`), **worker** (Python), and optionally **web** (UI on `localhost:5173`). Scale workers with `--scale worker=2` — jobs are claimed with `FOR UPDATE SKIP LOCKED`, so no job is ever processed twice.
 
 ### Endpoints
 
@@ -207,14 +248,16 @@ This starts three services: **postgres** (job state), **api** (Go, on `localhost
 |---|---|
 | `POST /jobs` | Create a job. Multipart form: `file` (PDF, required), `mode` (optional), `trim_matter=true` (optional). Returns `201 {id, status:"QUEUED"}` right away. |
 | `GET /jobs/{id}` | Job status + metadata (`status`, `error`, `result_location`, timestamps). |
-| `GET /jobs/{id}/result` | Download `final.mp3` once the job is `COMPLETED` (otherwise `409`). |
+| `GET /jobs/{id}/result` | Stream `final.mp3` once the job is `COMPLETED` (otherwise `409`). |
 | `GET /healthz` | Liveness + DB ping. |
+
+CORS is enabled via `CORS_ORIGINS` (comma-separated allowlist; default in Compose covers local web ports).
 
 ### Example
 
 ```bash
 # 1. Submit a job
-curl -F "file=@sample_pdfs/ladyWithDog.pdf" -F mode=narrative http://localhost:8080/jobs
+curl -F "file=@fixtures/sample.pdf" -F mode=structured http://localhost:8080/jobs
 # → {"id":"e5ef16c8-...","status":"QUEUED"}
 
 # 2. Poll until COMPLETED
@@ -246,7 +289,7 @@ Because the pipeline degrades gracefully on LLM/network hiccups, `FAILED` is res
 | `--mode` | `structured`, `narrative` | `structured` | Pipeline mode |
 | `--trim-matter` | *(boolean flag)* | off | Strip front/back matter via LLM before conversion |
 
-**Mode selection logic:** If `--mode` is omitted (or given an unrecognised value), the tool always runs `structured`. It internally detects whether the text looks like fiction, but this only prints a hint — it never auto-switches to `narrative`. You must pass `--mode narrative` explicitly. (The API exposes the same `mode` / `trim_matter` as form fields.)
+**Mode selection logic:** If `--mode` is omitted (or given an unrecognised value), the tool always runs `structured`. It internally detects whether the text looks like fiction, but this only prints a hint — it never auto-switches to `narrative`. You must pass `--mode narrative` explicitly. (The API/UI expose the same `mode` / `trim_matter` as form fields.)
 
 ---
 
@@ -310,6 +353,9 @@ Check that the key is actually set (`echo $DEEPSEEK_API_KEY`). For Docker, ensur
 
 **API job stuck in `QUEUED`**
 The worker isn't picking it up. Check `docker compose logs worker` — it must reach the same Postgres as the API and (for narrative jobs) have `DEEPSEEK_API_KEY` in its environment.
+
+**Web UI can't reach the API**
+With Compose, open the UI at http://localhost:5173 (nginx proxies `/jobs`). If you run `npm run dev` separately, ensure the API is on `:8080` and CORS_ORIGINS includes your Vite origin.
 
 **Stale chunks from a previous run**
 Re-running on the same PDF leaves higher-numbered `chunk_NNNN.mp3` files from a longer previous run in `chunks/`. They are not included in the new `final.mp3` but do linger on disk. Delete `output/<book>/chunks/` before re-running if disk space is a concern.

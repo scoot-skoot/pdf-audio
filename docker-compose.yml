@@ -16,6 +16,7 @@ services:
       POSTGRES_DB: pdfaudio
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ./schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
@@ -29,6 +30,9 @@ services:
     working_dir: /app
     environment:
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/pdfaudio?sslmode=disable
+      UPLOADS_DIR: /app/output/_uploads
+      # Browser may hit the API directly on :8080; web UI usually uses the nginx proxy.
+      CORS_ORIGINS: "http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173,http://localhost:8080"
     ports:
       - "8080:8080"
     volumes:
@@ -39,6 +43,7 @@ services:
 
   worker:
     build: .
+    working_dir: /app
     entrypoint: ["python", "worker.py"]
     environment:
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/pdfaudio
@@ -49,6 +54,15 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+
+  # Full-stack web UI — open http://localhost:5173
+  web:
+    build:
+      context: ./web
+    ports:
+      - "5173:80"
+    depends_on:
+      - api
 
 volumes:
   pgdata:
