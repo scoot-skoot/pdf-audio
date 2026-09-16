@@ -1,20 +1,20 @@
 :root {
-  --ink: #13221a;
-  --ink-soft: #2a4034;
-  --leaf: #1f6f4a;
-  --leaf-bright: #2f9e68;
-  --gold: #d4a24c;
-  --gold-soft: #f0d9a8;
-  --paper: #f3eee3;
-  --paper-deep: #e4d8c4;
-  --fog: rgba(19, 34, 26, 0.08);
+  --ink: #0e1f2a;
+  --ink-soft: #355064;
+  --leaf: #0f7a6b;
+  --leaf-bright: #19a090;
+  --gold: #c9852a;
+  --gold-soft: #f3d7a6;
+  --paper: #eef4f6;
+  --paper-deep: #d7e4ea;
+  --fog: rgba(14, 31, 42, 0.08);
   --danger: #9b2c2c;
   --danger-bg: #f8e8e8;
-  --ok: #1f6f4a;
+  --ok: #0f7a6b;
   --radius: 14px;
   --font-display: "Fraunces", Georgia, serif;
   --font-body: "Manrope", "Segoe UI", sans-serif;
-  --shadow: 0 24px 60px rgba(19, 34, 26, 0.18);
+  --shadow: 0 24px 60px rgba(14, 31, 42, 0.16);
 }
 
 *,
@@ -33,9 +33,9 @@ body {
   font-family: var(--font-body);
   color: var(--ink);
   background:
-    radial-gradient(1200px 700px at 12% -10%, rgba(47, 158, 104, 0.22), transparent 55%),
-    radial-gradient(900px 600px at 100% 0%, rgba(212, 162, 76, 0.18), transparent 50%),
-    linear-gradient(160deg, #f7f2e8 0%, #e8dfcf 45%, #d9cbb4 100%);
+    radial-gradient(1100px 700px at 8% -15%, rgba(25, 160, 144, 0.22), transparent 55%),
+    radial-gradient(900px 600px at 100% 0%, rgba(53, 120, 168, 0.16), transparent 52%),
+    linear-gradient(165deg, #f4f8fa 0%, #e5eef3 48%, #d5e3eb 100%);
   background-attachment: fixed;
 }
 
@@ -180,7 +180,7 @@ body::before {
 .hero-panel {
   animation: rise 900ms 140ms ease both, drift 8s ease-in-out infinite alternate;
   background:
-    linear-gradient(145deg, rgba(255, 252, 246, 0.92), rgba(243, 234, 214, 0.88)),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.94), rgba(232, 241, 246, 0.9)),
     var(--paper);
   border: 1px solid rgba(19, 34, 26, 0.08);
   border-radius: calc(var(--radius) + 6px);
@@ -345,7 +345,7 @@ body::before {
 .status-panel {
   padding: 1.35rem 1.4rem;
   border-radius: calc(var(--radius) + 4px);
-  background: rgba(255, 252, 246, 0.88);
+  background: rgba(255, 255, 255, 0.9);
   border: 1px solid rgba(19, 34, 26, 0.08);
   box-shadow: var(--shadow);
 }
