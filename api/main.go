@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	_ "github.com/lib/pq"
@@ -27,6 +28,15 @@ func envOr(k, def string) string {
 		return v
 	}
 	return def
+}
+
+func init() {
+	// Resolve once so createJob writes next to the shared output volume regardless of cwd.
+	if !filepath.IsAbs(uploadsDir) {
+		if abs, err := filepath.Abs(uploadsDir); err == nil {
+			uploadsDir = abs
+		}
+	}
 }
 
 type job struct {
@@ -58,7 +68,7 @@ func createJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer file.Close()
-	if filepath.Ext(hdr.Filename) != ".pdf" {
+	if filepath.Ext(strings.ToLower(hdr.Filename)) != ".pdf" {
 		http.Error(w, "file must be a .pdf", http.StatusBadRequest)
 		return
 	}
@@ -133,8 +143,10 @@ func getResult(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "result not ready (status="+j.Status+")", http.StatusConflict)
 		return
 	}
-	// ponytail: local FS now — serve the file. S3 later: http.Redirect to a presigned URL.
-	w.Header().Set("Content-Disposition", "attachment; filename=\""+j.ID+".mp3\"")
+	// Local FS now — serve the file. S3 later: http.Redirect to a presigned URL.
+	// inline so the web player can stream; download button still uses the download attr.
+	w.Header().Set("Content-Type", "audio/mpeg")
+	w.Header().Set("Content-Disposition", "inline; filename=\""+j.ID+".mp3\"")
 	http.ServeFile(w, r, *j.ResultLocation)
 }
 
@@ -155,6 +167,57 @@ func healthz(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("ok"))
 }
 
+// corsMiddleware allows the web UI (and local Vite) to call the API cross-origin.
+// CORS_ORIGINS is a comma-separated allowlist; empty or "*" allows any origin.
+func corsMiddleware(next http.Handler) http.Handler {
+	allowlist := parseOrigins(envOr("CORS_ORIGINS", "*"))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		origin := r.Header.Get("Origin")
+		if origin != "" && originAllowed(origin, allowlist) {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Vary", "Origin")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Accept")
+			w.Header().Set("Access-Control-Expose-Headers", "Content-Disposition, Content-Type, Content-Length")
+		}
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func parseOrigins(raw string) []string {
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+func originAllowed(origin string, allowlist []string) bool {
+	for _, allowed := range allowlist {
+		if allowed == "*" || allowed == origin {
+			return true
+		}
+	}
+	return false
+}
+
+func newMux() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /jobs", createJob)
+	mux.HandleFunc("GET /jobs/{id}", getJob)
+	mux.HandleFunc("GET /jobs/{id}/result", getResult)
+	mux.HandleFunc("GET /healthz", healthz)
+	return corsMiddleware(mux)
+}
+
 func main() {
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
@@ -166,13 +229,7 @@ func main() {
 		log.Fatalf("open db: %v", err)
 	}
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("POST /jobs", createJob)
-	mux.HandleFunc("GET /jobs/{id}", getJob)
-	mux.HandleFunc("GET /jobs/{id}/result", getResult)
-	mux.HandleFunc("GET /healthz", healthz)
-
 	addr := ":" + envOr("PORT", "8080")
 	log.Printf("API listening on %s", addr)
-	log.Fatal(http.ListenAndServe(addr, mux))
+	log.Fatal(http.ListenAndServe(addr, newMux()))
 }
